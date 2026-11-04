@@ -1,11 +1,17 @@
 const CHIAVE = 'scadenze.prodotti.v1';
 const CHIAVE_CATALOGO = 'scadenze.catalogo.v1';
+const CHIAVE_IMPOSTAZIONI = 'scadenze.impostazioni.v1';
 const CHIAVE_AVVISO = 'scadenze.ultimoAvviso';
 const CHIAVE_POSIZIONE = 'scadenze.ultimaPosizione';
 const SOGLIA_GIORNI = 3;
+const LUOGHI_BASE = [
+  { id: 'frigo', nome: 'Frigo', icona: '❄️' },
+  { id: 'armadio', nome: 'Armadio', icona: '🗄️' },
+];
 
 let prodotti = caricaJson(CHIAVE, []);
 let catalogo = caricaJson(CHIAVE_CATALOGO, []);
+let impostazioni = caricaImpostazioni();
 let filtro = 'tutti';
 let immagineForm = '';
 
@@ -20,6 +26,26 @@ function caricaJson(chiave, predefinito) {
   }
 }
 
+function caricaImpostazioni() {
+  const salvate = caricaJson(CHIAVE_IMPOSTAZIONI, {});
+  const luoghi = Array.isArray(salvate.luoghi) && salvate.luoghi.length
+    ? salvate.luoghi
+    : LUOGHI_BASE.map(l => ({ ...l }));
+  return {
+    densita: ['compatta', 'normale', 'grande'].includes(salvate.densita) ? salvate.densita : 'normale',
+    immagini: salvate.immagini !== false,
+    luoghi,
+  };
+}
+
+function salvaImpostazioni() {
+  try {
+    localStorage.setItem(CHIAVE_IMPOSTAZIONI, JSON.stringify(impostazioni));
+  } catch {
+    alert('Non riesco a salvare le impostazioni su questo dispositivo.');
+  }
+}
+
 function salvaTutto() {
   try {
     localStorage.setItem(CHIAVE, JSON.stringify(prodotti));
@@ -30,11 +56,13 @@ function salvaTutto() {
 }
 
 function ultimaPosizione() {
+  let posizione = impostazioni.luoghi[0].id;
   try {
-    return localStorage.getItem(CHIAVE_POSIZIONE) || 'frigo';
+    posizione = localStorage.getItem(CHIAVE_POSIZIONE) || posizione;
   } catch {
-    return 'frigo';
+    // uso il primo luogo
   }
+  return impostazioni.luoghi.some(l => l.id === posizione) ? posizione : impostazioni.luoghi[0].id;
 }
 
 function ricordaPosizione(posizione) {
@@ -79,8 +107,13 @@ function formatData(iso) {
   return new Date(a, m - 1, g).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+function luogoDi(id) {
+  return impostazioni.luoghi.find(l => l.id === id) || { id, nome: 'Senza luogo', icona: '📦' };
+}
+
 function luogo(posizione) {
-  return posizione === 'frigo' ? '❄️ Frigo' : '🗄️ Armadio';
+  const l = luogoDi(posizione);
+  return `${l.icona} ${l.nome}`;
 }
 
 function esc(testo) {
@@ -93,6 +126,21 @@ function normalizza(testo) {
 
 function miniaturaHtml(immagine) {
   return `<div class="thumb">${immagine ? `<img src="${esc(immagine)}" alt="" loading="lazy" onerror="this.replaceWith('🥫')">` : '🥫'}</div>`;
+}
+
+// --- filtri per luogo, costruiti dai luoghi impostati ---
+function renderFiltri() {
+  if (filtro !== 'tutti' && !impostazioni.luoghi.some(l => l.id === filtro)) filtro = 'tutti';
+  const bottoni = [{ id: 'tutti', etichetta: 'Tutti' }, ...impostazioni.luoghi.map(l => ({ id: l.id, etichetta: `${l.icona} ${l.nome}` }))];
+  $('filtri').innerHTML = bottoni.map(f =>
+    `<button type="button" data-filtro="${esc(f.id)}" aria-pressed="${filtro === f.id}">${esc(f.etichetta)}</button>`
+  ).join('');
+}
+
+function renderSelectLuoghi() {
+  $('posizione').innerHTML = impostazioni.luoghi
+    .map(l => `<option value="${esc(l.id)}">${esc(l.icona)} ${esc(l.nome)}</option>`)
+    .join('');
 }
 
 // --- lista ---
@@ -111,7 +159,7 @@ function cardHtml(p) {
         <strong>${esc(p.nome)}</strong>
         ${p.marca ? `<span class="marca">${esc(p.marca)}</span>` : ''}
         <span class="data">Scade il ${formatData(p.scadenza)}</span>
-        <span class="luogo">${luogo(p.posizione)}</span>
+        <span class="luogo">${esc(luogo(p.posizione))}</span>
       </div>
       <div class="scad">
         <span class="badge">${etichetta(giorni)}</span>
@@ -137,6 +185,87 @@ function render() {
     : '<p class="vuoto">Nessun prodotto. Premi + per aggiungerne uno.</p>';
   aggiornaBanner();
 }
+
+// --- impostazioni ---
+function applicaImpostazioni() {
+  document.body.classList.toggle('densita-compatta', impostazioni.densita === 'compatta');
+  document.body.classList.toggle('densita-grande', impostazioni.densita === 'grande');
+  document.body.classList.toggle('senza-immagini', !impostazioni.immagini);
+  document.querySelectorAll('input[name="densita"]').forEach(r => { r.checked = r.value === impostazioni.densita; });
+  $('mostraImmagini').checked = impostazioni.immagini;
+}
+
+function renderListaLuoghi() {
+  $('listaLuoghi').innerHTML = impostazioni.luoghi.map(l => {
+    const n = prodotti.filter(p => p.posizione === l.id).length;
+    return `
+      <li class="luogo-riga">
+        <span>${esc(l.icona)} ${esc(l.nome)} <small>(${n} ${n === 1 ? 'prodotto' : 'prodotti'})</small></span>
+        <button type="button" class="rimuovi" data-luogo="${esc(l.id)}" ${n ? 'disabled title="Sposta prima i prodotti"' : ''} aria-label="Togli ${esc(l.nome)}">✕</button>
+      </li>`;
+  }).join('');
+}
+
+function apriImpostazioni() {
+  applicaImpostazioni();
+  renderListaLuoghi();
+  $('dialogoImpostazioni').showModal();
+}
+
+function aggiornaDopoImpostazioni() {
+  renderFiltri();
+  renderSelectLuoghi();
+  render();
+}
+
+document.querySelectorAll('input[name="densita"]').forEach(r => {
+  r.addEventListener('change', () => {
+    impostazioni.densita = r.value;
+    salvaImpostazioni();
+    applicaImpostazioni();
+  });
+});
+
+$('mostraImmagini').addEventListener('change', e => {
+  impostazioni.immagini = e.target.checked;
+  salvaImpostazioni();
+  applicaImpostazioni();
+});
+
+$('aggiungiLuogo').addEventListener('click', () => {
+  const nome = $('nuovoLuogoNome').value.trim();
+  if (!nome) return;
+  if (impostazioni.luoghi.some(l => normalizza(l.nome) === normalizza(nome))) {
+    alert('Esiste già un luogo con questo nome.');
+    return;
+  }
+  const icona = $('nuovoLuogoIcona').value.trim() || '📦';
+  impostazioni.luoghi.push({ id: 'l-' + nuovoId(), nome, icona });
+  salvaImpostazioni();
+  $('nuovoLuogoNome').value = '';
+  $('nuovoLuogoIcona').value = '';
+  renderListaLuoghi();
+  aggiornaDopoImpostazioni();
+});
+
+$('listaLuoghi').addEventListener('click', e => {
+  const b = e.target.closest('[data-luogo]');
+  if (!b || b.disabled) return;
+  if (impostazioni.luoghi.length <= 1) {
+    alert('Deve restare almeno un luogo.');
+    return;
+  }
+  const l = luogoDi(b.dataset.luogo);
+  if (!confirm(`Togliere il luogo "${l.nome}"?`)) return;
+  impostazioni.luoghi = impostazioni.luoghi.filter(x => x.id !== l.id);
+  salvaImpostazioni();
+  renderListaLuoghi();
+  aggiornaDopoImpostazioni();
+});
+
+$('impostazioniBtn').addEventListener('click', apriImpostazioni);
+$('chiudiImpostazioni').addEventListener('click', () => $('dialogoImpostazioni').close());
+$('fattoImpostazioni').addEventListener('click', () => $('dialogoImpostazioni').close());
 
 // --- avvisi di sistema ---
 async function mostraAvviso(titolo, corpo) {
@@ -248,7 +377,7 @@ function mostraRisultati() {
     <li class="voce-riga">
       <button type="button" class="voce" data-id="${esc(c.id)}">
         ${miniaturaHtml(c.immagine)}
-        <span><strong>${esc(c.nome)}</strong><small>${esc(c.marca || '')}${c.marca ? ' · ' : ''}${luogo(c.posizione)}</small></span>
+        <span><strong>${esc(c.nome)}</strong><small>${esc(c.marca || '')}${c.marca ? ' · ' : ''}${esc(luogo(c.posizione))}</small></span>
       </button>
       <button type="button" class="rimuovi" data-rimuovi="${esc(c.id)}" aria-label="Togli dai salvati">✕</button>
     </li>`).join('');
@@ -258,10 +387,11 @@ function mostraRisultati() {
 function apriForm(dati = {}, messaggio = '') {
   if ($('dialogoScelta').open) $('dialogoScelta').close();
   $('form').reset();
+  renderSelectLuoghi();
   $('nome').value = dati.nome || '';
   $('marca').value = dati.marca || '';
   $('codice').value = dati.codice || '';
-  $('posizione').value = dati.posizione || ultimaPosizione();
+  $('posizione').value = impostazioni.luoghi.some(l => l.id === dati.posizione) ? dati.posizione : ultimaPosizione();
   immagineForm = dati.immagine || '';
   $('anteprima').innerHTML = immagineForm ? miniaturaHtml(immagineForm) : '';
   $('anteprima').hidden = !immagineForm;
@@ -437,11 +567,11 @@ $('indietro').addEventListener('click', () => {
 });
 
 // --- filtri e consumo ---
-document.querySelector('.filtri').addEventListener('click', e => {
+$('filtri').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
   filtro = b.dataset.filtro;
-  document.querySelectorAll('.filtri button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  document.querySelectorAll('#filtri button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
   render();
 });
 
@@ -455,9 +585,10 @@ $('lista').addEventListener('click', e => {
   render();
 });
 
-// --- backup (prodotti e prodotti salvati) ---
+// --- backup (prodotti, prodotti salvati e impostazioni) ---
 $('esporta').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify({ versione: 2, prodotti, catalogo }, null, 2)], { type: 'application/json' });
+  const dati = { versione: 3, prodotti, catalogo, impostazioni };
+  const blob = new Blob([JSON.stringify(dati, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -481,11 +612,15 @@ $('fileImporta').addEventListener('change', async e => {
     const idCatalogo = new Set(catalogo.map(c => c.id));
     const pNuovi = daProdotti.filter(p => p && p.id && p.nome && p.scadenza && !idProdotti.has(p.id));
     const cNuovi = daCatalogo.filter(c => c && c.id && c.nome && !idCatalogo.has(c.id));
+    const luoghiNuovi = (dati.impostazioni && Array.isArray(dati.impostazioni.luoghi) ? dati.impostazioni.luoghi : [])
+      .filter(l => l && l.id && l.nome && !impostazioni.luoghi.some(x => x.id === l.id));
     prodotti = prodotti.concat(pNuovi);
     catalogo = catalogo.concat(cNuovi);
+    impostazioni.luoghi = impostazioni.luoghi.concat(luoghiNuovi);
     salvaTutto();
-    render();
-    alert(`Importati ${pNuovi.length} prodotti e ${cNuovi.length} prodotti salvati.`);
+    salvaImpostazioni();
+    aggiornaDopoImpostazioni();
+    alert(`Importati ${pNuovi.length} prodotti, ${cNuovi.length} prodotti salvati e ${luoghiNuovi.length} luoghi.`);
   } catch {
     alert('File di backup non valido.');
   }
@@ -513,6 +648,9 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+applicaImpostazioni();
+renderFiltri();
+renderSelectLuoghi();
 render();
 aggiornaPulsanteAvvisi();
 avvisaScadenze();
