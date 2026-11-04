@@ -90,6 +90,7 @@
   .voce span { display: flex; flex-direction: column; min-width: 0; }
   .rimuovi { border: none; background: none; color: var(--grigio); font-size: 16px; padding: 8px; }
   .nota { padding: 12px 4px; color: var(--grigio); font-size: 14px; }
+  #video { width: 100%; border-radius: 8px; background: #000; }
 </style>
 </head>
 <body>
@@ -121,7 +122,7 @@
 
 <button id="aggiungi" class="fab" type="button" aria-label="Aggiungi prodotto">+</button>
 
-<input type="file" id="foto" accept="image/*" capture="environment" hidden>
+<input type="file" id="foto" accept="image/*" hidden>
 
 <dialog id="dialogoScelta">
   <div class="pannello">
@@ -130,7 +131,8 @@
       <button type="button" class="chiudi" id="chiudiScelta" aria-label="Chiudi">✕</button>
     </div>
 
-    <button type="button" class="foto" id="fotoBtn">📷 Fotografa il codice a barre</button>
+    <button type="button" class="foto" id="scannerBtn">📷 Inquadra il codice a barre</button>
+    <button type="button" class="secondario" id="galleriaBtn">🖼️ Scegli una foto dalla galleria</button>
     <p class="stato" id="statoScelta" aria-live="polite"></p>
 
     <input type="search" id="cerca" placeholder="Cerca tra i prodotti già salvati…">
@@ -139,6 +141,17 @@
     <div class="azioni">
       <button type="button" class="secondario" id="manualeBtn">✏️ Scrivi a mano</button>
     </div>
+  </div>
+</dialog>
+
+<dialog id="dialogoScanner">
+  <div class="pannello">
+    <div class="intestazione">
+      <h2>Inquadra il codice</h2>
+      <button type="button" class="chiudi" id="chiudiScanner" aria-label="Chiudi">✕</button>
+    </div>
+    <video id="video" playsinline muted></video>
+    <p class="stato" id="statoScanner" aria-live="polite"></p>
   </div>
 </dialog>
 
@@ -164,13 +177,6 @@
     <label>Scadenza *
       <input type="date" id="scadenza" required>
     </label>
-    <div class="chip-row" id="scorciatoie">
-      <button type="button" data-giorni="3">+3 giorni</button>
-      <button type="button" data-giorni="7">+7 giorni</button>
-      <button type="button" data-giorni="30">+30 giorni</button>
-      <button type="button" data-giorni="90">+90 giorni</button>
-      <button type="button" data-giorni="180">+180 giorni</button>
-    </div>
     <label>Codice a barre
       <input id="codice" inputmode="numeric" maxlength="20">
     </label>

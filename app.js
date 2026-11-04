@@ -285,30 +285,109 @@ function ricordaNelCatalogo({ nome, marca, posizione, codice, immagine }) {
   catalogo.push({ id: nuovoId(), nome, marca, posizione, codice, immagine });
 }
 
-$('fotoBtn').addEventListener('click', () => $('foto').click());
+// --- lettura del codice: fotocamera in diretta oppure foto dalla galleria ---
+let scannerAttivo = false;
+let flussoCamera = null;
+let timerScanner = null;
+let lettoreZXing = null;
 
-$('foto').addEventListener('change', async e => {
-  const file = e.target.files[0];
-  e.target.value = '';
-  if (!file) return;
-  $('statoScelta').textContent = 'Leggo il codice…';
-  const codice = await leggiCodiceDaFoto(file);
-  if (!codice) {
-    $('statoScelta').textContent = 'Non riesco a leggere il codice: riprova più vicino e con più luce, oppure scrivi il nome.';
+function statoScelta(testo) {
+  $('statoScelta').textContent = testo;
+}
+
+function statoScanner(testo) {
+  $('statoScanner').textContent = testo;
+}
+
+async function apriScanner() {
+  scannerAttivo = true;
+  statoScanner('Avvio la fotocamera…');
+  $('dialogoScanner').showModal();
+  try {
+    flussoCamera = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  } catch {
+    statoScanner('Non riesco ad aprire la fotocamera. Controlla il permesso oppure scegli una foto dalla galleria.');
     return;
   }
+  const video = $('video');
+  video.srcObject = flussoCamera;
+  video.play().catch(() => {});
+  statoScanner('Avvicina il codice a barre alla fotocamera');
+
+  if ('BarcodeDetector' in window) {
+    const rilevatore = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'] });
+    timerScanner = setInterval(async () => {
+      if (!scannerAttivo || video.readyState < 2) return;
+      try {
+        const risultati = await rilevatore.detect(video);
+        if (risultati.length) codiceLetto(risultati[0].rawValue);
+      } catch {
+        // riprovo al giro successivo
+      }
+    }, 300);
+  } else if (window.ZXing) {
+    lettoreZXing = new ZXing.BrowserMultiFormatReader();
+    lettoreZXing.decodeFromVideoElement(video, risultato => {
+      if (risultato) codiceLetto(risultato.getText());
+    });
+  } else {
+    statoScanner('Questo browser non legge i codici in diretta: scegli una foto dalla galleria.');
+  }
+}
+
+function fermaScanner() {
+  scannerAttivo = false;
+  clearInterval(timerScanner);
+  timerScanner = null;
+  if (lettoreZXing) {
+    lettoreZXing.reset();
+    lettoreZXing = null;
+  }
+  if (flussoCamera) {
+    flussoCamera.getTracks().forEach(t => t.stop());
+    flussoCamera = null;
+  }
+  $('video').srcObject = null;
+}
+
+function codiceLetto(codice) {
+  if (!scannerAttivo) return;
+  fermaScanner();
+  $('dialogoScanner').close();
+  gestisciCodice(codice);
+}
+
+async function gestisciCodice(codice) {
   const salvato = catalogo.find(c => c.codice === codice);
   if (salvato) {
     apriForm({ ...salvato }, `Già salvato: ${salvato.nome}. Metti la scadenza.`);
     return;
   }
-  $('statoScelta').textContent = 'Codice letto, cerco il prodotto…';
+  statoScelta('Codice letto, cerco il prodotto…');
   const trovato = await cercaProdotto(codice);
   if (trovato) {
     apriForm({ ...trovato, codice }, `Trovato: ${trovato.nome}. Metti la scadenza.`);
   } else {
     apriForm({ codice }, 'Codice letto, ma il prodotto non è nel database: scrivi nome e scadenza.');
   }
+}
+
+$('scannerBtn').addEventListener('click', apriScanner);
+$('chiudiScanner').addEventListener('click', () => $('dialogoScanner').close());
+$('dialogoScanner').addEventListener('close', fermaScanner);
+$('galleriaBtn').addEventListener('click', () => $('foto').click());
+
+$('foto').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  statoScelta('Leggo il codice…');
+  const codice = await leggiCodiceDaFoto(file);
+  if (!codice) {
+    statoScelta('Non riesco a leggere il codice in questa foto: prova con una foto più vicina e nitida, oppure scrivi il nome.');
+    return;
+  }
+  gestisciCodice(codice);
 });
 
 $('cerca').addEventListener('input', mostraRisultati);
@@ -332,14 +411,6 @@ $('risultati').addEventListener('click', e => {
 $('manualeBtn').addEventListener('click', () => apriForm({}, ''));
 $('chiudiScelta').addEventListener('click', () => $('dialogoScelta').close());
 $('aggiungi').addEventListener('click', apriScelta);
-
-document.querySelectorAll('#scorciatoie button').forEach(b => {
-  b.addEventListener('click', () => {
-    const d = new Date();
-    d.setDate(d.getDate() + Number(b.dataset.giorni));
-    $('scadenza').value = dataIso(d);
-  });
-});
 
 $('form').addEventListener('submit', e => {
   e.preventDefault();
