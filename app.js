@@ -178,7 +178,6 @@ function cardHtml(p) {
       </div>
       <div class="scad">
         <span class="badge">${etichetta(giorni)}</span>
-        <button type="button" class="elimina" data-id="${esc(p.id)}">✓ Consumato</button>
       </div>
     </article>`;
 }
@@ -392,6 +391,7 @@ function apriForm(dati = {}, messaggio = '') {
   modificaId = null;
   $('titoloForm').textContent = 'Scadenza prodotto';
   $('indietro').hidden = false;
+  $('consumato').hidden = true;
   $('form').reset();
   renderSelectLuoghi();
   $('nome').value = dati.nome || '';
@@ -415,6 +415,7 @@ function apriModifica(id) {
   modificaId = id;
   $('titoloForm').textContent = 'Modifica prodotto';
   $('indietro').hidden = true;
+  $('consumato').hidden = false;
 }
 
 // Salva il prodotto nell'elenco dei prodotti già usati, così la prossima volta non serve la foto.
@@ -599,17 +600,19 @@ $('filtri').addEventListener('click', e => {
 });
 
 $('lista').addEventListener('click', e => {
-  const b = e.target.closest('.elimina');
-  if (b) {
-    const p = prodotti.find(x => x.id === b.dataset.id);
-    if (!p || !confirm(`Segnare "${p.nome}" come consumato e toglierlo dalla lista?`)) return;
-    prodotti = prodotti.filter(x => x.id !== p.id);
-    salvaTutto();
-    render();
-    return;
-  }
   const nome = e.target.closest('.nome-prodotto');
   if (nome) apriModifica(nome.dataset.id);
+});
+
+// Consumato: elimina il prodotto che si sta modificando.
+$('consumato').addEventListener('click', () => {
+  const p = prodotti.find(x => x.id === modificaId);
+  if (!p || !confirm(`Segnare "${p.nome}" come consumato e toglierlo dalla lista?`)) return;
+  prodotti = prodotti.filter(x => x.id !== p.id);
+  modificaId = null;
+  salvaTutto();
+  $('dialogo').close();
+  render();
 });
 
 $('dialogo').addEventListener('close', () => {
