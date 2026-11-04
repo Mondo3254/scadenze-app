@@ -171,7 +171,7 @@ function cardHtml(p) {
     <article class="card ${statoDi(giorni)}" data-id="${esc(p.id)}">
       ${miniaturaHtml(p.immagine)}
       <div class="info">
-        <strong>${esc(p.nome)}</strong>
+        <strong class="nome-prodotto" data-id="${esc(p.id)}">${esc(p.nome)}</strong>
         ${p.marca ? `<span class="marca">${esc(p.marca)}</span>` : ''}
         <span class="data">Scade il ${formatData(p.scadenza)}</span>
         <span class="luogo">${esc(luogo(p.posizione))}</span>
@@ -608,8 +608,8 @@ $('lista').addEventListener('click', e => {
     render();
     return;
   }
-  const card = e.target.closest('.card');
-  if (card) apriModifica(card.dataset.id);
+  const nome = e.target.closest('.nome-prodotto');
+  if (nome) apriModifica(nome.dataset.id);
 });
 
 $('dialogo').addEventListener('close', () => {
