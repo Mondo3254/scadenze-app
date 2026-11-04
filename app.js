@@ -178,7 +178,7 @@ function cardHtml(p) {
       </div>
       <div class="scad">
         <span class="badge">${etichetta(giorni)}</span>
-        <button type="button" class="elimina" data-id="${esc(p.id)}">Consumato</button>
+        <button type="button" class="elimina" data-id="${esc(p.id)}">✓ Consumato</button>
       </div>
     </article>`;
 }
