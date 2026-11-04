@@ -16,6 +16,7 @@ let catalogo = caricaJson(CHIAVE_CATALOGO, []);
 let impostazioni = caricaImpostazioni();
 let filtro = 'tutti';
 let immagineForm = '';
+let modificaId = null;
 
 const $ = id => document.getElementById(id);
 
@@ -167,7 +168,7 @@ function prodottiVisibili() {
 function cardHtml(p) {
   const giorni = giorniAllaScadenza(p.scadenza);
   return `
-    <article class="card ${statoDi(giorni)}">
+    <article class="card ${statoDi(giorni)}" data-id="${esc(p.id)}">
       ${miniaturaHtml(p.immagine)}
       <div class="info">
         <strong>${esc(p.nome)}</strong>
@@ -388,11 +389,15 @@ function mostraRisultati() {
 // --- form con scadenza e luogo ---
 function apriForm(dati = {}, messaggio = '') {
   if ($('dialogoScelta').open) $('dialogoScelta').close();
+  modificaId = null;
+  $('titoloForm').textContent = 'Scadenza prodotto';
+  $('indietro').hidden = false;
   $('form').reset();
   renderSelectLuoghi();
   $('nome').value = dati.nome || '';
   $('marca').value = dati.marca || '';
   $('codice').value = dati.codice || '';
+  $('scadenza').value = dati.scadenza || '';
   $('posizione').value = luoghiVisibili().some(l => l.id === dati.posizione) ? dati.posizione : ultimaPosizione();
   immagineForm = dati.immagine || '';
   $('anteprima').innerHTML = immagineForm ? miniaturaHtml(immagineForm) : '';
@@ -400,6 +405,16 @@ function apriForm(dati = {}, messaggio = '') {
   $('scanStato').textContent = messaggio;
   $('dialogo').showModal();
   (dati.nome ? $('scadenza') : $('nome')).focus();
+}
+
+// Apre il form con i dati del prodotto già inserito, per modificarlo.
+function apriModifica(id) {
+  const p = prodotti.find(x => x.id === id);
+  if (!p) return;
+  apriForm({ ...p }, `Modifica i dati di ${p.nome}.`);
+  modificaId = id;
+  $('titoloForm').textContent = 'Modifica prodotto';
+  $('indietro').hidden = true;
 }
 
 // Salva il prodotto nell'elenco dei prodotti già usati, così la prossima volta non serve la foto.
@@ -554,7 +569,13 @@ $('form').addEventListener('submit', e => {
     codice: $('codice').value.trim(),
     immagine: immagineForm,
   };
-  prodotti.push({ id: nuovoId(), ...dati });
+  if (modificaId) {
+    const daModificare = prodotti.find(x => x.id === modificaId);
+    if (daModificare) Object.assign(daModificare, dati);
+    modificaId = null;
+  } else {
+    prodotti.push({ id: nuovoId(), ...dati });
+  }
   ricordaNelCatalogo(dati);
   ricordaPosizione(dati.posizione);
   salvaTutto();
@@ -579,12 +600,20 @@ $('filtri').addEventListener('click', e => {
 
 $('lista').addEventListener('click', e => {
   const b = e.target.closest('.elimina');
-  if (!b) return;
-  const p = prodotti.find(x => x.id === b.dataset.id);
-  if (!p || !confirm(`Segnare "${p.nome}" come consumato e toglierlo dalla lista?`)) return;
-  prodotti = prodotti.filter(x => x.id !== p.id);
-  salvaTutto();
-  render();
+  if (b) {
+    const p = prodotti.find(x => x.id === b.dataset.id);
+    if (!p || !confirm(`Segnare "${p.nome}" come consumato e toglierlo dalla lista?`)) return;
+    prodotti = prodotti.filter(x => x.id !== p.id);
+    salvaTutto();
+    render();
+    return;
+  }
+  const card = e.target.closest('.card');
+  if (card) apriModifica(card.dataset.id);
+});
+
+$('dialogo').addEventListener('close', () => {
+  modificaId = null;
 });
 
 // --- backup (prodotti, prodotti salvati e impostazioni) ---
