@@ -1,4 +1,4 @@
-const CACHE = 'scadenze-v3';
+const CACHE = 'scadenze-v4';
 const FILE_APP = ['./', './index.html', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
