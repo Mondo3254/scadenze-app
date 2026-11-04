@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#37474f">
+<title>Scadenze</title>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js" defer></script>
+<style>
+  :root {
+    --verde: #2e7d32; --verde-bg: #e8f5e9;
+    --giallo: #f9a825; --giallo-bg: #fff8e1;
+    --rosso: #c62828; --rosso-bg: #ffebee;
+    --grigio: #616161; --sfondo: #f5f5f5;
+  }
+  [hidden] { display: none !important; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: var(--sfondo); color: #212121; }
+  button { font: inherit; cursor: pointer; }
+
+  header { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 16px; background: #37474f; color: #fff; position: sticky; top: 0; z-index: 1; }
+  header h1 { font-size: 20px; margin: 0; }
+  #notifBtn { background: rgba(255,255,255,.15); color: #fff; border: 1px solid rgba(255,255,255,.4); border-radius: 20px; padding: 6px 12px; font-size: 13px; }
+  #notifBtn:disabled { opacity: .7; cursor: default; }
+
+  main { max-width: 600px; margin: 0 auto; padding: 12px 16px 100px; }
+
+  #banner { padding: 10px 12px; border-radius: 8px; font-weight: 600; margin-bottom: 12px; }
+  #banner.rosso { background: var(--rosso-bg); color: var(--rosso); border-left: 6px solid var(--rosso); }
+  #banner.giallo { background: var(--giallo-bg); color: #7a5b00; border-left: 6px solid var(--giallo); }
+
+  .filtri { display: flex; gap: 8px; margin-bottom: 8px; }
+  .filtri button { flex: 1; padding: 8px; border: 1px solid #b0bec5; border-radius: 20px; background: #fff; }
+  .filtri button[aria-pressed="true"] { background: #37474f; color: #fff; border-color: #37474f; }
+
+  .legenda { font-size: 13px; color: var(--grigio); margin: 4px 0 12px; }
+
+  .card { background: #fff; border-radius: 10px; padding: 12px; margin-bottom: 10px; display: flex; justify-content: space-between; gap: 8px; border-left: 8px solid #ccc; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .card.verde { border-left-color: var(--verde); }
+  .card.giallo { border-left-color: var(--giallo); }
+  .card.rosso { border-left-color: var(--rosso); }
+  .info { display: flex; flex-direction: column; min-width: 0; }
+  .info strong { overflow-wrap: anywhere; }
+  .marca, .luogo, small { color: var(--grigio); font-size: 13px; }
+  .scad { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+  .badge { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 12px; color: #fff; white-space: nowrap; }
+  .verde .badge { background: var(--verde); }
+  .giallo .badge { background: var(--giallo); color: #212121; }
+  .rosso .badge { background: var(--rosso); }
+  .elimina { font-size: 13px; padding: 4px 8px; border: 1px solid #bbb; border-radius: 6px; background: #fff; }
+  .vuoto { text-align: center; color: var(--grigio); margin-top: 40px; }
+
+  .fab { position: fixed; right: 20px; bottom: 20px; width: 60px; height: 60px; border-radius: 50%; border: none; background: var(--verde); color: #fff; font-size: 32px; box-shadow: 0 3px 8px rgba(0,0,0,.3); }
+
+  dialog { border: none; border-radius: 12px; width: min(92vw, 420px); padding: 0; }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  form { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  form h2 { margin: 0; font-size: 18px; }
+  form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; }
+  input, select { font: inherit; font-weight: normal; padding: 10px; border: 1px solid #b0bec5; border-radius: 8px; }
+  .foto { padding: 12px; border: 2px dashed #90a4ae; border-radius: 8px; background: #eceff1; font-weight: 600; }
+  #scanStato { font-size: 13px; color: var(--grigio); margin: 0; min-height: 1.2em; }
+  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip-row button { padding: 6px 10px; border: 1px solid #90a4ae; border-radius: 16px; background: #fff; font-size: 13px; }
+  .azioni { display: flex; justify-content: flex-end; gap: 8px; }
+  .azioni button { padding: 10px 16px; border-radius: 8px; border: none; }
+  .primario { background: var(--verde); color: #fff; }
+  .secondario { background: #eceff1; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🥫 Scadenze</h1>
+  <button id="notifBtn" type="button">🔔 Attiva avvisi</button>
+</header>
+
+<main>
+  <div id="banner" hidden></div>
+
+  <nav class="filtri">
+    <button type="button" data-filtro="tutti" aria-pressed="true">Tutti</button>
+    <button type="button" data-filtro="frigo" aria-pressed="false">❄️ Frigo</button>
+    <button type="button" data-filtro="armadio" aria-pressed="false">🗄️ Armadio</button>
+  </nav>
+
+  <p class="legenda">🟢 oltre 3 giorni · 🟡 entro 3 giorni · 🔴 oggi o scaduto</p>
+
+  <section id="lista"></section>
+
+  <p class="legenda">
+    <button type="button" id="esporta" class="secondario">Esporta backup</button>
+    <button type="button" id="importa" class="secondario">Importa backup</button>
+    <input type="file" id="fileImporta" accept="application/json" hidden>
+  </p>
+</main>
+
+<button id="aggiungi" class="fab" type="button" aria-label="Aggiungi prodotto">+</button>
+
+<dialog id="dialogo">
+  <form id="form">
+    <h2>Nuovo prodotto</h2>
+
+    <button type="button" class="foto" id="fotoBtn">📷 Fotografa il codice a barre</button>
+    <input type="file" id="foto" accept="image/*" capture="environment" hidden>
+    <p id="scanStato" aria-live="polite"></p>
+
+    <label>Nome *
+      <input id="nome" required maxlength="80">
+    </label>
+    <label>Marca
+      <input id="marca" maxlength="60">
+    </label>
+    <label>Dove si conserva *
+      <select id="posizione">
+        <option value="frigo">❄️ Frigo</option>
+        <option value="armadio">🗄️ Armadio</option>
+      </select>
+    </label>
+    <label>Scadenza *
+      <input type="date" id="scadenza" required>
+    </label>
+    <div class="chip-row" id="scorciatoie">
+      <button type="button" data-giorni="3">+3 giorni</button>
+      <button type="button" data-giorni="7">+7 giorni</button>
+      <button type="button" data-giorni="30">+30 giorni</button>
+      <button type="button" data-giorni="90">+90 giorni</button>
+      <button type="button" data-giorni="180">+180 giorni</button>
+    </div>
+    <label>Codice a barre
+      <input id="codice" inputmode="numeric" maxlength="20">
+    </label>
+
+    <div class="azioni">
+      <button type="button" class="secondario" id="annulla">Annulla</button>
+      <button type="submit" class="primario">Salva</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
