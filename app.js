@@ -1,27 +1,52 @@
 const CHIAVE = 'scadenze.prodotti.v1';
+const CHIAVE_CATALOGO = 'scadenze.catalogo.v1';
 const CHIAVE_AVVISO = 'scadenze.ultimoAvviso';
+const CHIAVE_POSIZIONE = 'scadenze.ultimaPosizione';
 const SOGLIA_GIORNI = 3;
 
-let prodotti = caricaProdotti();
+let prodotti = caricaJson(CHIAVE, []);
+let catalogo = caricaJson(CHIAVE_CATALOGO, []);
 let filtro = 'tutti';
+let immagineForm = '';
 
 const $ = id => document.getElementById(id);
 
 // --- memoria del browser (localStorage) ---
-function caricaProdotti() {
+function caricaJson(chiave, predefinito) {
   try {
-    return JSON.parse(localStorage.getItem(CHIAVE)) || [];
+    return JSON.parse(localStorage.getItem(chiave)) || predefinito;
   } catch {
-    return [];
+    return predefinito;
   }
 }
 
-function salvaProdotti() {
+function salvaTutto() {
   try {
     localStorage.setItem(CHIAVE, JSON.stringify(prodotti));
+    localStorage.setItem(CHIAVE_CATALOGO, JSON.stringify(catalogo));
   } catch {
     alert('Non riesco a salvare i dati su questo dispositivo.');
   }
+}
+
+function ultimaPosizione() {
+  try {
+    return localStorage.getItem(CHIAVE_POSIZIONE) || 'frigo';
+  } catch {
+    return 'frigo';
+  }
+}
+
+function ricordaPosizione(posizione) {
+  try {
+    localStorage.setItem(CHIAVE_POSIZIONE, posizione);
+  } catch {
+    // il luogo viene solo suggerito, non serve salvarlo
+  }
+}
+
+function nuovoId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
 // --- date e stati ---
@@ -54,8 +79,20 @@ function formatData(iso) {
   return new Date(a, m - 1, g).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+function luogo(posizione) {
+  return posizione === 'frigo' ? '❄️ Frigo' : '🗄️ Armadio';
+}
+
 function esc(testo) {
   return String(testo ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+function normalizza(testo) {
+  return String(testo ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function miniaturaHtml(immagine) {
+  return `<div class="thumb">${immagine ? `<img src="${esc(immagine)}" alt="" loading="lazy" onerror="this.replaceWith('🥫')">` : '🥫'}</div>`;
 }
 
 // --- lista ---
@@ -69,14 +106,15 @@ function cardHtml(p) {
   const giorni = giorniAllaScadenza(p.scadenza);
   return `
     <article class="card ${statoDi(giorni)}">
+      ${miniaturaHtml(p.immagine)}
       <div class="info">
         <strong>${esc(p.nome)}</strong>
         ${p.marca ? `<span class="marca">${esc(p.marca)}</span>` : ''}
-        <span class="luogo">${p.posizione === 'frigo' ? '❄️ Frigo' : '🗄️ Armadio'}</span>
+        <span class="data">Scade il ${formatData(p.scadenza)}</span>
+        <span class="luogo">${luogo(p.posizione)}</span>
       </div>
       <div class="scad">
         <span class="badge">${etichetta(giorni)}</span>
-        <small>${formatData(p.scadenza)}</small>
         <button type="button" class="elimina" data-id="${esc(p.id)}">Consumato</button>
       </div>
     </article>`;
@@ -168,27 +206,83 @@ async function leggiConZXing(file) {
   }
 }
 
-// --- nome e marca dal database Open Food Facts ---
+// --- nome, marca e immagine dal database Open Food Facts ---
 async function cercaProdotto(codice) {
   try {
-    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(codice)}?fields=product_name,brands`);
+    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(codice)}?fields=product_name,brands,image_front_small_url`);
     const d = await r.json();
     if (d.status !== 1 || !d.product.product_name) return null;
     return {
       nome: d.product.product_name,
       marca: (d.product.brands || '').split(',')[0].trim(),
+      immagine: d.product.image_front_small_url || '',
     };
   } catch {
     return null;
   }
 }
 
-// --- form ---
-function apriForm() {
+// --- scelta: prodotti salvati, foto o scrittura a mano ---
+function apriScelta() {
+  $('cerca').value = '';
+  $('statoScelta').textContent = '';
+  mostraRisultati();
+  $('dialogoScelta').showModal();
+}
+
+function mostraRisultati() {
+  const q = normalizza($('cerca').value.trim());
+  const ul = $('risultati');
+  if (!catalogo.length) {
+    ul.innerHTML = '<li class="nota">Nessun prodotto salvato ancora: fotografa il codice o scrivi il nome.</li>';
+    return;
+  }
+  const lista = catalogo
+    .filter(c => !q || normalizza(c.nome).includes(q) || normalizza(c.marca).includes(q))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'it'));
+  if (!lista.length) {
+    ul.innerHTML = '<li class="nota">Nessun risultato per questa ricerca.</li>';
+    return;
+  }
+  ul.innerHTML = lista.map(c => `
+    <li class="voce-riga">
+      <button type="button" class="voce" data-id="${esc(c.id)}">
+        ${miniaturaHtml(c.immagine)}
+        <span><strong>${esc(c.nome)}</strong><small>${esc(c.marca || '')}${c.marca ? ' · ' : ''}${luogo(c.posizione)}</small></span>
+      </button>
+      <button type="button" class="rimuovi" data-rimuovi="${esc(c.id)}" aria-label="Togli dai salvati">✕</button>
+    </li>`).join('');
+}
+
+// --- form con scadenza e luogo ---
+function apriForm(dati = {}, messaggio = '') {
+  if ($('dialogoScelta').open) $('dialogoScelta').close();
   $('form').reset();
-  $('scanStato').textContent = '';
+  $('nome').value = dati.nome || '';
+  $('marca').value = dati.marca || '';
+  $('codice').value = dati.codice || '';
+  $('posizione').value = dati.posizione || ultimaPosizione();
+  immagineForm = dati.immagine || '';
+  $('anteprima').innerHTML = immagineForm ? miniaturaHtml(immagineForm) : '';
+  $('anteprima').hidden = !immagineForm;
+  $('scanStato').textContent = messaggio;
   $('dialogo').showModal();
-  $('nome').focus();
+  (dati.nome ? $('scadenza') : $('nome')).focus();
+}
+
+// Salva il prodotto nell'elenco dei prodotti già usati, così la prossima volta non serve la foto.
+function ricordaNelCatalogo({ nome, marca, posizione, codice, immagine }) {
+  const esistente = catalogo.find(c =>
+    (codice && c.codice === codice) || (!codice && normalizza(c.nome) === normalizza(nome))
+  );
+  if (esistente) {
+    Object.assign(esistente, {
+      nome, marca, posizione, codice: codice || esistente.codice,
+      immagine: immagine || esistente.immagine,
+    });
+    return;
+  }
+  catalogo.push({ id: nuovoId(), nome, marca, posizione, codice, immagine });
 }
 
 $('fotoBtn').addEventListener('click', () => $('foto').click());
@@ -197,23 +291,47 @@ $('foto').addEventListener('change', async e => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
-  $('scanStato').textContent = 'Leggo il codice…';
+  $('statoScelta').textContent = 'Leggo il codice…';
   const codice = await leggiCodiceDaFoto(file);
   if (!codice) {
-    $('scanStato').textContent = 'Non riesco a leggere il codice: riprova più vicino e con più luce, oppure scrivilo a mano.';
+    $('statoScelta').textContent = 'Non riesco a leggere il codice: riprova più vicino e con più luce, oppure scrivi il nome.';
     return;
   }
-  $('codice').value = codice;
-  $('scanStato').textContent = 'Codice letto, cerco il prodotto…';
+  const salvato = catalogo.find(c => c.codice === codice);
+  if (salvato) {
+    apriForm({ ...salvato }, `Già salvato: ${salvato.nome}. Metti la scadenza.`);
+    return;
+  }
+  $('statoScelta').textContent = 'Codice letto, cerco il prodotto…';
   const trovato = await cercaProdotto(codice);
   if (trovato) {
-    if (!$('nome').value) $('nome').value = trovato.nome;
-    if (!$('marca').value) $('marca').value = trovato.marca;
-    $('scanStato').textContent = `Trovato: ${trovato.nome}. Metti la scadenza.`;
+    apriForm({ ...trovato, codice }, `Trovato: ${trovato.nome}. Metti la scadenza.`);
   } else {
-    $('scanStato').textContent = 'Codice letto, ma prodotto non trovato: scrivi nome e scadenza.';
+    apriForm({ codice }, 'Codice letto, ma il prodotto non è nel database: scrivi nome e scadenza.');
   }
 });
+
+$('cerca').addEventListener('input', mostraRisultati);
+
+$('risultati').addEventListener('click', e => {
+  const rimuovi = e.target.closest('.rimuovi');
+  if (rimuovi) {
+    const c = catalogo.find(x => x.id === rimuovi.dataset.rimuovi);
+    if (!c || !confirm(`Togliere "${c.nome}" dai prodotti salvati? Resta nella lista delle scadenze.`)) return;
+    catalogo = catalogo.filter(x => x.id !== c.id);
+    salvaTutto();
+    mostraRisultati();
+    return;
+  }
+  const voce = e.target.closest('.voce');
+  if (!voce) return;
+  const c = catalogo.find(x => x.id === voce.dataset.id);
+  if (c) apriForm({ ...c }, `Metti la scadenza per ${c.nome}.`);
+});
+
+$('manualeBtn').addEventListener('click', () => apriForm({}, ''));
+$('chiudiScelta').addEventListener('click', () => $('dialogoScelta').close());
+$('aggiungi').addEventListener('click', apriScelta);
 
 document.querySelectorAll('#scorciatoie button').forEach(b => {
   b.addEventListener('click', () => {
@@ -225,21 +343,27 @@ document.querySelectorAll('#scorciatoie button').forEach(b => {
 
 $('form').addEventListener('submit', e => {
   e.preventDefault();
-  prodotti.push({
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+  const dati = {
     nome: $('nome').value.trim(),
     marca: $('marca').value.trim(),
     posizione: $('posizione').value,
     scadenza: $('scadenza').value,
     codice: $('codice').value.trim(),
-  });
-  salvaProdotti();
+    immagine: immagineForm,
+  };
+  prodotti.push({ id: nuovoId(), ...dati });
+  ricordaNelCatalogo(dati);
+  ricordaPosizione(dati.posizione);
+  salvaTutto();
   $('dialogo').close();
   render();
 });
 
 $('annulla').addEventListener('click', () => $('dialogo').close());
-$('aggiungi').addEventListener('click', apriForm);
+$('indietro').addEventListener('click', () => {
+  $('dialogo').close();
+  apriScelta();
+});
 
 // --- filtri e consumo ---
 document.querySelector('.filtri').addEventListener('click', e => {
@@ -256,13 +380,13 @@ $('lista').addEventListener('click', e => {
   const p = prodotti.find(x => x.id === b.dataset.id);
   if (!p || !confirm(`Segnare "${p.nome}" come consumato e toglierlo dalla lista?`)) return;
   prodotti = prodotti.filter(x => x.id !== p.id);
-  salvaProdotti();
+  salvaTutto();
   render();
 });
 
-// --- backup ---
+// --- backup (prodotti e prodotti salvati) ---
 $('esporta').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(prodotti, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ versione: 2, prodotti, catalogo }, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -279,13 +403,18 @@ $('fileImporta').addEventListener('change', async e => {
   if (!file) return;
   try {
     const dati = JSON.parse(await file.text());
-    if (!Array.isArray(dati)) throw new Error('formato non valido');
-    const idEsistenti = new Set(prodotti.map(p => p.id));
-    const nuovi = dati.filter(p => p && p.id && p.nome && p.scadenza && !idEsistenti.has(p.id));
-    prodotti = prodotti.concat(nuovi);
-    salvaProdotti();
+    if (!dati || typeof dati !== 'object') throw new Error('formato non valido');
+    const daProdotti = Array.isArray(dati) ? dati : (dati.prodotti || []);
+    const daCatalogo = Array.isArray(dati) ? [] : (dati.catalogo || []);
+    const idProdotti = new Set(prodotti.map(p => p.id));
+    const idCatalogo = new Set(catalogo.map(c => c.id));
+    const pNuovi = daProdotti.filter(p => p && p.id && p.nome && p.scadenza && !idProdotti.has(p.id));
+    const cNuovi = daCatalogo.filter(c => c && c.id && c.nome && !idCatalogo.has(c.id));
+    prodotti = prodotti.concat(pNuovi);
+    catalogo = catalogo.concat(cNuovi);
+    salvaTutto();
     render();
-    alert(`Importati ${nuovi.length} prodotti.`);
+    alert(`Importati ${pNuovi.length} prodotti e ${cNuovi.length} prodotti salvati.`);
   } catch {
     alert('File di backup non valido.');
   }
