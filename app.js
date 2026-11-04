@@ -7,6 +7,8 @@ const SOGLIA_GIORNI = 3;
 const LUOGHI_BASE = [
   { id: 'frigo', nome: 'Frigo', icona: '❄️' },
   { id: 'armadio', nome: 'Armadio', icona: '🗄️' },
+  { id: 'freezer', nome: 'Freezer', icona: '🧊' },
+  { id: 'dispensa', nome: 'Dispensa', icona: '🍝' },
 ];
 
 let prodotti = caricaJson(CHIAVE, []);
@@ -26,16 +28,19 @@ function caricaJson(chiave, predefinito) {
   }
 }
 
+// I luoghi sono fissi: quelli predefiniti, senza possibilità di aggiungerne altri.
 function caricaImpostazioni() {
   const salvate = caricaJson(CHIAVE_IMPOSTAZIONI, {});
-  const luoghi = Array.isArray(salvate.luoghi) && salvate.luoghi.length
-    ? salvate.luoghi
-    : LUOGHI_BASE.map(l => ({ ...l }));
   return {
     densita: ['compatta', 'normale', 'grande'].includes(salvate.densita) ? salvate.densita : 'normale',
     immagini: salvate.immagini !== false,
-    luoghi,
+    luoghi: LUOGHI_BASE.map(l => ({ ...l })),
   };
+}
+
+// Un prodotto con un luogo non più presente finisce in Frigo.
+function sistemaLuoghiProdotti() {
+  prodotti = prodotti.map(p => impostazioni.luoghi.some(l => l.id === p.posizione) ? p : { ...p, posizione: 'frigo' });
 }
 
 function salvaImpostazioni() {
@@ -200,8 +205,8 @@ function renderListaLuoghi() {
     const n = prodotti.filter(p => p.posizione === l.id).length;
     return `
       <li class="luogo-riga">
-        <span>${esc(l.icona)} ${esc(l.nome)} <small>(${n} ${n === 1 ? 'prodotto' : 'prodotti'})</small></span>
-        <button type="button" class="rimuovi" data-luogo="${esc(l.id)}" ${n ? 'disabled title="Sposta prima i prodotti"' : ''} aria-label="Togli ${esc(l.nome)}">✕</button>
+        <span>${esc(l.icona)} ${esc(l.nome)}</span>
+        <small>${n} ${n === 1 ? 'prodotto' : 'prodotti'}</small>
       </li>`;
   }).join('');
 }
@@ -230,37 +235,6 @@ $('mostraImmagini').addEventListener('change', e => {
   impostazioni.immagini = e.target.checked;
   salvaImpostazioni();
   applicaImpostazioni();
-});
-
-$('aggiungiLuogo').addEventListener('click', () => {
-  const nome = $('nuovoLuogoNome').value.trim();
-  if (!nome) return;
-  if (impostazioni.luoghi.some(l => normalizza(l.nome) === normalizza(nome))) {
-    alert('Esiste già un luogo con questo nome.');
-    return;
-  }
-  const icona = $('nuovoLuogoIcona').value.trim() || '📦';
-  impostazioni.luoghi.push({ id: 'l-' + nuovoId(), nome, icona });
-  salvaImpostazioni();
-  $('nuovoLuogoNome').value = '';
-  $('nuovoLuogoIcona').value = '';
-  renderListaLuoghi();
-  aggiornaDopoImpostazioni();
-});
-
-$('listaLuoghi').addEventListener('click', e => {
-  const b = e.target.closest('[data-luogo]');
-  if (!b || b.disabled) return;
-  if (impostazioni.luoghi.length <= 1) {
-    alert('Deve restare almeno un luogo.');
-    return;
-  }
-  const l = luogoDi(b.dataset.luogo);
-  if (!confirm(`Togliere il luogo "${l.nome}"?`)) return;
-  impostazioni.luoghi = impostazioni.luoghi.filter(x => x.id !== l.id);
-  salvaImpostazioni();
-  renderListaLuoghi();
-  aggiornaDopoImpostazioni();
 });
 
 $('impostazioniBtn').addEventListener('click', apriImpostazioni);
@@ -648,6 +622,8 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+sistemaLuoghiProdotti();
+salvaTutto();
 applicaImpostazioni();
 renderFiltri();
 renderSelectLuoghi();
