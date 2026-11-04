@@ -35,6 +35,9 @@ function caricaImpostazioni() {
     densita: ['compatta', 'normale', 'grande'].includes(salvate.densita) ? salvate.densita : 'normale',
     immagini: salvate.immagini !== false,
     luoghi: LUOGHI_BASE.map(l => ({ ...l })),
+    nascosti: Array.isArray(salvate.nascosti)
+      ? salvate.nascosti.filter(id => LUOGHI_BASE.some(l => l.id === id)).slice(0, LUOGHI_BASE.length - 1)
+      : [],
   };
 }
 
@@ -60,14 +63,20 @@ function salvaTutto() {
   }
 }
 
+// I luoghi che l'utente ha scelto di mostrare nell'app.
+function luoghiVisibili() {
+  return impostazioni.luoghi.filter(l => !impostazioni.nascosti.includes(l.id));
+}
+
 function ultimaPosizione() {
-  let posizione = impostazioni.luoghi[0].id;
+  const visibili = luoghiVisibili();
+  let posizione = visibili[0].id;
   try {
     posizione = localStorage.getItem(CHIAVE_POSIZIONE) || posizione;
   } catch {
-    // uso il primo luogo
+    // uso il primo luogo visibile
   }
-  return impostazioni.luoghi.some(l => l.id === posizione) ? posizione : impostazioni.luoghi[0].id;
+  return visibili.some(l => l.id === posizione) ? posizione : visibili[0].id;
 }
 
 function ricordaPosizione(posizione) {
@@ -135,15 +144,15 @@ function miniaturaHtml(immagine) {
 
 // --- filtri per luogo, costruiti dai luoghi impostati ---
 function renderFiltri() {
-  if (filtro !== 'tutti' && !impostazioni.luoghi.some(l => l.id === filtro)) filtro = 'tutti';
-  const bottoni = [{ id: 'tutti', etichetta: 'Tutti' }, ...impostazioni.luoghi.map(l => ({ id: l.id, etichetta: `${l.icona} ${l.nome}` }))];
+  if (filtro !== 'tutti' && !luoghiVisibili().some(l => l.id === filtro)) filtro = 'tutti';
+  const bottoni = [{ id: 'tutti', etichetta: 'Tutti' }, ...luoghiVisibili().map(l => ({ id: l.id, etichetta: `${l.icona} ${l.nome}` }))];
   $('filtri').innerHTML = bottoni.map(f =>
     `<button type="button" data-filtro="${esc(f.id)}" aria-pressed="${filtro === f.id}">${esc(f.etichetta)}</button>`
   ).join('');
 }
 
 function renderSelectLuoghi() {
-  $('posizione').innerHTML = impostazioni.luoghi
+  $('posizione').innerHTML = luoghiVisibili()
     .map(l => `<option value="${esc(l.id)}">${esc(l.icona)} ${esc(l.nome)}</option>`)
     .join('');
 }
@@ -203,13 +212,32 @@ function applicaImpostazioni() {
 function renderListaLuoghi() {
   $('listaLuoghi').innerHTML = impostazioni.luoghi.map(l => {
     const n = prodotti.filter(p => p.posizione === l.id).length;
+    const visibile = !impostazioni.nascosti.includes(l.id);
     return `
       <li class="luogo-riga">
-        <span>${esc(l.icona)} ${esc(l.nome)}</span>
+        <label class="riga"><input type="checkbox" data-luogo="${esc(l.id)}" ${visibile ? 'checked' : ''}> ${esc(l.icona)} ${esc(l.nome)}</label>
         <small>${n} ${n === 1 ? 'prodotto' : 'prodotti'}</small>
       </li>`;
   }).join('');
 }
+
+$('listaLuoghi').addEventListener('change', e => {
+  const cb = e.target.closest('input[data-luogo]');
+  if (!cb) return;
+  const id = cb.dataset.luogo;
+  if (cb.checked) {
+    impostazioni.nascosti = impostazioni.nascosti.filter(x => x !== id);
+  } else {
+    if (luoghiVisibili().length <= 1) {
+      cb.checked = true;
+      alert('Deve restare almeno un luogo visibile.');
+      return;
+    }
+    impostazioni.nascosti = impostazioni.nascosti.concat(id);
+  }
+  salvaImpostazioni();
+  aggiornaDopoImpostazioni();
+});
 
 function apriImpostazioni() {
   applicaImpostazioni();
@@ -365,7 +393,7 @@ function apriForm(dati = {}, messaggio = '') {
   $('nome').value = dati.nome || '';
   $('marca').value = dati.marca || '';
   $('codice').value = dati.codice || '';
-  $('posizione').value = impostazioni.luoghi.some(l => l.id === dati.posizione) ? dati.posizione : ultimaPosizione();
+  $('posizione').value = luoghiVisibili().some(l => l.id === dati.posizione) ? dati.posizione : ultimaPosizione();
   immagineForm = dati.immagine || '';
   $('anteprima').innerHTML = immagineForm ? miniaturaHtml(immagineForm) : '';
   $('anteprima').hidden = !immagineForm;
